@@ -1,0 +1,108 @@
+# Stress testing access token validation
+#
+# Targeting 2 000 tokens with 5 000 total QPS for 5k node cluster, so it's 2.5
+# QPS per token.
+#
+# For this test number of tokens is not changed with number of nodes.
+# By default, those 2 000 tokens are are assigned to 80 service accounts, with
+# 25 tokens each. There is 1:1 mapping between deployments and service
+# accounts, so 80 deployments is generated, each with one pod.
+#
+# For smaller cluster, we scale down lineary QPS per token to
+# 2.5 * (Number of nodes)/(5 000). This results in 1 QPS per node, if there is
+# 2 000 tokens.
+#
+# Structure and mapping:
+# * For each namespace (by default 1), we are generating service accounts and
+#   deployments (by default 80).
+# * For each service account we are generating tokens (by default 25).
+# * For each deployment we are creating pods (by default 1) and for those pods
+#   we are mounting all tokens generated from linked service account.
+# * Each pod is running a number of clients equal to number of assigned tokens.
+#
+# When defining your own parameters:
+# Number of tokens = ${namespaces} * ${serviceAccounts} * ${tokensPerServiceAccount}
+# Total QPS = Number of tokens * ${replicas} * ${qpsPerWorker}
+#
+# For default values in 5k cluster this means:
+# Number of tokens = 1 * 80 * 25 = 2000
+# Total QPS = 2000 * 1 * 2.5 = 5000
+
+# Size of test variables
+{{$namespaces := DefaultParam .CL2_NG_NAMESPACES 1}}
+{{$nodegroups := DefaultParam .CL2_NG_NODEGROUPS 1}}
+
+name: nodegroups
+namespace:
+  number: {{$namespaces}}
+tuningSets:
+  - name: Sequence
+    parallelismLimitedLoad:
+      parallelismLimit: 1
+  - name: SequenceStepped
+    steppedLoad:
+      burstSize: 1
+      stepDelay: 15s
+
+steps:
+- name: Creating Nodegroups
+  phases:
+  {{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 1
+    tuningSet: SequenceStepped
+    objectBundle:
+      - basename: scale-{{$i}}
+        objectTemplatePath: nodegroup.yaml
+  {{ end }}
+
+- name: Waiting for nodes to be running
+  measurements:
+  - Identifier: WaitForNodes
+    Method: WaitForNodes
+    Params:
+      maxDesiredNodeCount: 2500
+      # minDesiredNodeCount:  {{ MultiplyInt 3 (MultiplyInt $nodegroups $namespaces)}}
+      minDesiredNodeCount:  {{ MultiplyInt $nodegroups $namespaces}} # Third of the nodes because it takes too long when lot of ng are created
+      action: gather
+      labelSelector: test = scale
+      timeout: 120m
+
+- name: Deleting nodegrougps
+  phases:
+  {{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 0
+    tuningSet: SequenceStepped
+    objectBundle:
+    - basename: scale-{{$i}}
+      objectTemplatePath: nodegroup.yaml
+  {{ end }}
+
+- name: Deleting nodegroups 2
+  phases:
+  {{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 0
+    tuningSet: SequenceStepped
+    objectBundle:
+    - basename: scale-{{$i}}
+      objectTemplatePath: nodegroup.yaml
+  {{ end }}
+
+- name: Waiting for nodes to be gone
+  measurements:
+  - Identifier: WaitForNodes
+    Method: WaitForNodes
+    Params:
+      maxDesiredNodeCount: 0
+      minDesiredNodeCount: 0
+      action: gather
+      labelSelector: test = scale
+      timeout: 60m

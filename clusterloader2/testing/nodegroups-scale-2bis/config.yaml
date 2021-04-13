@@ -1,0 +1,111 @@
+# Size of test variables
+{{$namespaces := DefaultParam .CL2_NG_NAMESPACES 1}}
+{{$nodegroups := DefaultParam .CL2_NG_NODEGROUPS 1}}
+{{$replicas := DefaultParam .CL2_NG_REPLICAS 1}}
+{{$maxReplicas := DefaultParam .CL2_NG_MAXREPLICAS 3}}
+
+name: nodegroups-scale-2
+namespace:
+  number: {{$namespaces}}
+tuningSets:
+  - name: Sequence
+    parallelismLimitedLoad:
+      parallelismLimit: 1
+  - name: SequenceStepped
+    steppedLoad:
+      burstSize: 1
+      stepDelay: 15s
+
+steps:
+- name: Creating Nodegroups
+  phases:
+  {{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 1
+    tuningSet: SequenceStepped
+    objectBundle:
+      - basename: scale-{{$i}}
+        objectTemplatePath: nodegroup.yaml
+        templateFillMap:
+          TaintIdx: {{$namespaces}}
+  {{ end }}
+
+- name: Starting measurement for waiting for pods
+  measurements:
+  - Identifier: WaitForRunningPods
+    Method: WaitForControlledPodsRunning
+    Params:
+      action: start
+      apiVersion: apps/v1
+      kind: Deployment
+      labelSelector: test = scale
+      operationTimeout: 30m
+      checkIfPodsAreUpdated: false
+
+- name: Scale-up pods
+  phases:
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 1
+    tuningSet: Sequence
+    objectBundle:
+    - basename: scale
+      objectTemplatePath: deployment.yaml
+      templateFillMap:
+        Replicas: {{$maxReplicas}}
+        TaintIdx: {{$namespaces}}
+
+- name: Waiting for pods to be running
+  measurements:
+  - Identifier: WaitForRunningPods
+    Method: WaitForControlledPodsRunning
+    Params:
+      action: gather
+
+- name: Deleting pods
+  phases:
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 0
+    tuningSet: Sequence
+    objectBundle:
+    - basename: scale
+      objectTemplatePath: deployment.yaml
+      templateFillMap:
+        Replicas: {{$replicas}}
+        TaintIdx: {{$namespaces}}
+
+- name: Waiting for pods to be deleted
+  measurements:
+  - Identifier: WaitForRunningPods
+    Method: WaitForControlledPodsRunning
+    Params:
+      action: gather
+
+- name: Deleting nodegrougps
+  phases:
+  {{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 0
+    tuningSet: SequenceStepped
+    objectBundle:
+    - basename: scale-{{$i}}
+      objectTemplatePath: nodegroup.yaml
+  {{ end }}
+
+- name: Waiting for nodes to be gone
+  measurements:
+  - Identifier: WaitForNodes
+    Method: WaitForNodes
+    Params:
+      maxDesiredNodeCount: 0
+      minDesiredNodeCount: 0
+      action: gather
+      labelSelector: test = scale
+      timeout: 60m

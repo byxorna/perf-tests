@@ -1,0 +1,50 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Name }}
+  labels:
+    test: scale-3
+spec:
+  serviceName: {{ .Name }}
+  selector:
+    matchLabels:
+      test: scale-3
+  podManagementPolicy: "Parallel"
+  replicas: {{ .Replicas }}
+  template:
+    metadata:
+      labels:
+        test: scale-3
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                test: scale-3
+      tolerations:
+      - key: node
+        effect: NoSchedule
+        value: scale-3-{{.TaintIdx}}
+      containers:
+      - name: pause
+        image: gcr.io/google-containers/pause:3.2
+        resources:
+          requests:
+            cpu: 1000m # 1mCpu per Token * per QPS
+            memory: 1Gi
+        volumeMounts:
+          - mountPath: /mount
+            name: data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      storageClassName: ssd
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi

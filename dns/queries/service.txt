@@ -1,1 +1,1 @@
-kube-dns.kube-system.svc.cluster.local A
+cluster-dns.cluster-dns.svc.rage.cluster.local A

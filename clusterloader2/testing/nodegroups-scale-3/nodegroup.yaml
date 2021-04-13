@@ -1,0 +1,32 @@
+---
+apiVersion: datadoghq.com/v1
+kind: NodeGroup
+metadata:
+  name: "{{ .Name }}"
+  annotations:
+    nodegroups.datadoghq.com/delete: "I-have-checked-that-no-workload-runs-on-nodes-before-deleting-this-ng-because-i-do-not-want-to-cause-another-sev1-incident"
+  labels:
+    team: compute
+    test: scale-3
+spec:
+  options:
+    clusterAutoscalerOptions:
+      maxSize: 750
+      minSize: 0
+      initialSize: 1
+  azure:
+    virtualMachineScaleSetSKU:
+      name: Standard_DS2_v2
+  aws:
+    group:
+      minSize: 0
+      maxSize: 750
+      initialSize: 1
+    launchConfiguration:
+      instanceType: t2.small
+  kubelet:
+    taints:
+      node: "scale-3-{{.TaintIdx}}:NoSchedule"
+    labels:
+      test: scale-3
+

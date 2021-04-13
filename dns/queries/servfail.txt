@@ -1,0 +1,2 @@
+consul.service.consul A
+consul.service.consul AAAA
