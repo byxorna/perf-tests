@@ -4,8 +4,8 @@ set -e
 test_dir="./testing"
 TEST="${TEST:-controlplane-load-1}"
 NODES="${NODES:-10}"
-CL2_NG_NAMESPACES="${CL2_NG_NAMESPACES:-1}"
-CL2_NG_NODEGROUPS="${CL2_NG_NODEGROUPS:-1}"
+CL2_NAMESPACES="${CL2_NAMESPACES:-1}"
+CL2_NODEGROUPS="${CL2_NODEGROUPS:-1}"
 CONTEXT="${CONTEXT:-$(kubectl config current-context)}"
 CLUSTER_NAMESPACE="${CLUSTER_NAMESPACE:-${CONTEXT%%.*}-k8s}"
 
@@ -30,6 +30,6 @@ fi
 set -ex
 CL2_CLUSTER_NAMESPACE="${CLUSTER_NAMESPACE}" \
   CL2_CLUSTER_FQDN="${CONTEXT}" \
-  CL2_NG_NAMESPACES="${CL2_NG_NAMESPACES}" \
-  CL2_NG_NAMESPACES=${CL2_NG_NAMESPACES} \
+  CL2_NODEGROUPS="${CL2_NODEGROUPS}" \
+  CL2_NAMESPACES=${CL2_NAMESPACES} \
     ./run-e2e.sh --provider=local --nodes=${NODES} --testconfig=${test_dir}/${TEST}/config.yaml
