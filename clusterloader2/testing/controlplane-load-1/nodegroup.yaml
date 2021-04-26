@@ -3,6 +3,7 @@ apiVersion: datadoghq.com/v1
 kind: NodeGroup
 metadata:
   name: "{{ .Name }}"
+  namespace: "{{ .Namespace }}"
   annotations:
     nodegroups.datadoghq.com/delete: "I-have-checked-that-no-workload-runs-on-nodes-before-deleting-this-ng-because-i-do-not-want-to-cause-another-sev1-incident"
   labels:
@@ -29,3 +30,5 @@ spec:
     labels:
       test: perf-tests
       nodegroup-name: "{{ .Name }}"
+      nodegroups.datadoghq.com/namespace: "{{ .Namespace }}"
+      nodegroups.datadoghq.com/name: "{{ .Name }}"

@@ -4,17 +4,17 @@ kind: Deployment
 metadata:
   name: {{$name}}
   labels:
-    test: scale
+    test: perf-tests
 spec:
   selector:
     matchLabels:
-      test: scale
+      test: perf-tests
       name: "{{$name}}"
   replicas: {{.Replicas}}
   template:
     metadata:
       labels:
-        test: scale
+        test: perf-tests
         name: {{$name}}
     spec:
       affinity:
@@ -23,11 +23,11 @@ spec:
           - topologyKey: kubernetes.io/hostname
             labelSelector:
               matchLabels:
-                test: scale
+                test: perf-tests
       tolerations:
         - key: node
           effect: NoSchedule
-          value: scale-{{.TaintIdx}}
+          value: {{.Taint}}
       containers:
         - name: pause
           image: gcr.io/google-containers/pause:3.2

@@ -48,9 +48,31 @@ tuningSets:
       stepDelay: 15s
 
 steps:
+- name: Starting measurements
+  # TODO: also gather these values
+  measurements:
+  - Identifier: APIResponsivenessPrometheus
+    Method: APIResponsivenessPrometheus
+    Params:
+      action: start
+  - Identifier: APIResponsivenessPrometheusSimple
+    Method: APIResponsivenessPrometheus
+    Params:
+      action: start
+  - Identifier: InClusterNetworkLatency
+    Method: InClusterNetworkLatency
+    Params:
+      action: start
+      replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
+  - Identifier: DnsLookupLatency
+    Method: DnsLookupLatency
+    Params:
+      action: start
+      replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
+
 - name: Creating Nodegroups
   phases:
-  {{range $i := Loop $nodegroups}}
+{{range $i := Loop $nodegroups}}
   - namespaceRange:
       min: 1
       max: {{$namespaces}}
@@ -59,7 +81,7 @@ steps:
     objectBundle:
       - basename: ng-{{$i}}
         objectTemplatePath: nodegroup.yaml
-  {{ end }}
+{{ end }}
 
 - name: Waiting for initial nodes to be running
   measurements:
@@ -87,26 +109,28 @@ steps:
 
 - name: Creating pods
   phases:
+{{range $i := Loop $nodegroups}}
   - namespaceRange:
       min: 1
       max: {{$namespaces}}
     replicasPerNamespace: 1
     tuningSet: Sequence
     objectBundle:
-    - basename: scale
+    - basename: pause
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        TaintIdx: {{$namespaces}}
+        TaintIdx: ng-{{$namespaces}}
+{{end}}
 
-- name: Waiting for pods to be running
+- name: Waiting for pods to be running L126
   measurements:
   - Identifier: WaitForRunningPods
     Method: WaitForControlledPodsRunning
     Params:
       action: gather
 
-- name: Scale-up pods
+- name: Scale-up pods L134
   phases:
   - namespaceRange:
       min: 1
@@ -114,20 +138,20 @@ steps:
     replicasPerNamespace: 1
     tuningSet: Sequence
     objectBundle:
-    - basename: scale
+    - basename: pause
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{MultiplyInt $maxScaleFactor $replicas}}
-        TaintIdx: {{$namespaces}}
+        Taint: {{$namespaces}}
 
-- name: Waiting for pods to be running
+- name: Waiting for pods to be running L147
   measurements:
   - Identifier: WaitForRunningPods
     Method: WaitForControlledPodsRunning
     Params:
       action: gather
 
-- name: Waiting for nodes to be running
+- name: Waiting for nodes to be running L154
   measurements:
   - Identifier: WaitForNodes
     Method: WaitForNodes
@@ -135,10 +159,10 @@ steps:
       maxDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
       minDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
       action: gather
-      labelSelector: test = scale
+      labelSelector: test = perf-tests
       timeout: 60m
 
-- name: Scale-down pods
+- name: Scale-down pods L165
   phases:
   - namespaceRange:
       min: 1
@@ -146,11 +170,11 @@ steps:
     replicasPerNamespace: 1
     tuningSet: Sequence
     objectBundle:
-    - basename: scale
+    - basename: pause
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        TaintIdx: {{$namespaces}}
+        Taint: {{$namespaces}}
 
 - name: Waiting for pods to be running
   measurements:
@@ -161,17 +185,19 @@ steps:
 
 - name: Deleting pods
   phases:
+{{range $i := Loop $nodegroups}}
   - namespaceRange:
       min: 1
       max: {{$namespaces}}
     replicasPerNamespace: 0
     tuningSet: Sequence
     objectBundle:
-    - basename: scale
+    - basename: perf-tests
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        TaintIdx: {{$namespaces}}
+        Taint: ng-{{$i}}-{{$namespaces}}
+{{ end }}
 
 - name: Waiting for pods to be deleted
   measurements:
