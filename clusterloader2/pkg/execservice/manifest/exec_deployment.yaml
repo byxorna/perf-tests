@@ -13,6 +13,11 @@ spec:
        labels:
          feature: exec
     spec:
+      tolerations:
+        - effect: NoSchedule
+          key: "node"
+          operator: Equal
+          value: "{{ DefaultParam .CL2_CLUSTER_NAMESPACE "chillpenguin-k8s" }}"
       containers:
       - name: agnhost
         image: gcr.io/kubernetes-e2e-test-images/agnhost:2.2
