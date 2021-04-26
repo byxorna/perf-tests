@@ -110,10 +110,10 @@ func isNodeUntainted(node *corev1.Node) bool {
 		if nodeTaint.Effect != corev1.TaintEffectNoSchedule && nodeTaint.Effect != corev1.TaintEffectNoExecute {
 			continue
 		}
-		if node.Spec.Taints[i].Key == "node" && node.Spec.Taints[i].Value == "bob" {
+		if nodeTaint.Key == "node" && nodeTaint.Value == "bob" {
 			return true
 		}
-		if node.Spec.Taints[i].Key == "node" && strings.HasPrefix(node.Spec.Taints[i].Value,"scale") {
+		if nodeTaint.Key == "node" && strings.HasPrefix(nodeTaint.Value, "scale") {
 			return true
 		}
 		for _, evictingTaintKey := range builtInTaintsKeys {
