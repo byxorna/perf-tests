@@ -2,20 +2,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{$name}}
+  name: {{.Name}}
   labels:
     test: perf-tests
 spec:
   selector:
     matchLabels:
       test: perf-tests
-      name: "{{$name}}"
+      name: "{{.Name}}"
   replicas: {{.Replicas}}
   template:
     metadata:
       labels:
         test: perf-tests
-        name: {{$name}}
+        name: {{.Name}}
     spec:
       affinity:
         podAntiAffinity:
@@ -27,11 +27,18 @@ spec:
       tolerations:
         - key: node
           effect: NoSchedule
-          operator: "Exist"
-          value: {{.Taint}}
+          operator: "Equal"
+          value: "{{.Taint}}-{{.Index}}"
       containers:
-        - name: pause
-          image: gcr.io/google-containers/pause:3.2
+        - name: watcher
+          image: bitnami/kubectl:1.21-debian-10
+          command:
+            - kubectl
+            - get
+            - pods
+            - -A
+            - --watch
+            - --output-watch-events
           resources:
             requests:
               cpu: 1000m # 1mCpu per Token * per QPS

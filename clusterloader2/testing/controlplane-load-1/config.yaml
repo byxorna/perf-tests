@@ -34,6 +34,7 @@
 {{$clns := DefaultParam .CL2_CLUSTER_NAMESPACE "missing-k8s"}}
 {{$replicas := DefaultParam .CL2_REPLICAS 10 }}
 {{$maxScaleFactor := DefaultParam .CL2_MAX_SCALE_FACTOR 3}}
+{{$numWatcherReplicas:= DefaultParam .CL2_WATCHER_REPLICAS 1 }}
 
 name: control-plane-load-1
 namespace:
@@ -107,6 +108,36 @@ steps:
       labelSelector: test = perf-tests
       operationTimeout: 20m
 
+- name: Launch watcher pods
+  phases:
+{{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 1
+    tuningSet: Sequence
+    objectBundle:
+    - basename: watcher
+      objectTemplatePath: watcher.yaml
+      templateFillMap:
+        Replicas: {{$numWatcherReplicas}}
+        Taint: ng-{{$i}}
+{{end}}
+
+- name: Waiting for watcher pods
+  measurements:
+  - Identifier: WaitForRunningPods
+    Method: WaitForControlledPodsRunning
+    Params:
+      action: gather
+
+- name: Wait for watcher pods
+  measurements:
+    - Identifier: Wait
+      Method: Sleep
+      Params:
+        duration: 5m
+
 - name: Creating pods
   phases:
 {{range $i := Loop $nodegroups}}
@@ -120,7 +151,7 @@ steps:
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        TaintIdx: ng-{{$namespaces}}
+        Taint: ng-{{$i}}
 {{end}}
 
 - name: Waiting for pods to be running L126
@@ -132,6 +163,7 @@ steps:
 
 - name: Scale-up pods L134
   phases:
+{{range $i := Loop $nodegroups}}
   - namespaceRange:
       min: 1
       max: {{$namespaces}}
@@ -142,7 +174,8 @@ steps:
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{MultiplyInt $maxScaleFactor $replicas}}
-        Taint: {{$namespaces}}
+        Taint: ng-{{$i}}
+{{end}}
 
 - name: Waiting for pods to be running L147
   measurements:
@@ -164,6 +197,7 @@ steps:
 
 - name: Scale-down pods L165
   phases:
+{{range $i := Loop $nodegroups}}
   - namespaceRange:
       min: 1
       max: {{$namespaces}}
@@ -174,7 +208,8 @@ steps:
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        Taint: {{$namespaces}}
+        Taint: ng-{{$i}}
+{{end}}
 
 - name: Waiting for pods to be running
   measurements:
@@ -183,7 +218,15 @@ steps:
     Params:
       action: gather
 
-- name: Deleting pods
+
+- name: Wait 5min
+  measurements:
+    - Identifier: Wait
+      Method: Sleep
+      Params:
+        duration: 5m
+
+- name: Deleting pause pods
   phases:
 {{range $i := Loop $nodegroups}}
   - namespaceRange:
@@ -196,7 +239,23 @@ steps:
       objectTemplatePath: deployment.yaml
       templateFillMap:
         Replicas: {{$replicas}}
-        Taint: ng-{{$i}}-{{$namespaces}}
+        Taint: ng-{{$i}}
+{{ end }}
+
+- name: Deleting watcher pods
+  phases:
+{{range $i := Loop $nodegroups}}
+  - namespaceRange:
+      min: 1
+      max: {{$namespaces}}
+    replicasPerNamespace: 0
+    tuningSet: Sequence
+    objectBundle:
+    - basename: watcher
+      objectTemplatePath: watcher.yaml
+      templateFillMap:
+        Replicas: {{$replicas}}
+        Taint: ng-{{$i}}
 {{ end }}
 
 - name: Waiting for pods to be deleted
