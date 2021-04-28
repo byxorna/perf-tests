@@ -4,6 +4,7 @@ kind: Deployment
 metadata:
   name: {{.Name}}
   labels:
+    role: watcher
     test: perf-tests
 spec:
   selector:
@@ -14,17 +15,33 @@ spec:
   template:
     metadata:
       labels:
+        role: watcher
         test: perf-tests
         name: {{.Name}}
     spec:
       serviceAccountName: "{{.Name}}"
       affinity:
-        podAntiAffinity:
+        nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-            - topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  test: perf-tests
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: test
+                    operator: In
+                    values:
+                      - perf-tests
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: "kubernetes.io/hostname"
+                labelSelector:
+                  matchExpressions:
+                    - key: test
+                      operator: In
+                      values: [ perf-tests ]
+                    - key: role
+                      operator: In
+                      values: [ watcher ]
       tolerations:
         - key: node
           effect: NoSchedule
@@ -41,5 +58,5 @@ spec:
             - --output-watch-events
           resources:
             requests:
-              cpu: 1000m # 1mCpu per Token * per QPS
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
