@@ -17,14 +17,14 @@ spec:
         test: perf-tests
         name: {{.Name}}
     spec:
-      serviceAccountName: "watcher"
+      serviceAccountName: "{{.Name}}"
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - topologyKey: kubernetes.io/hostname
-            labelSelector:
-              matchLabels:
-                test: perf-tests
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  test: perf-tests
       tolerations:
         - key: node
           effect: NoSchedule
@@ -37,7 +37,6 @@ spec:
             - kubectl
             - get
             - pods
-            - -A
             - --watch
             - --output-watch-events
           resources:

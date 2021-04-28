@@ -16,18 +16,18 @@ spec:
         test: perf-tests
         name: {{.Name}}
     spec:
-      #affinity:
-      #  nodeAffinity:
-      #    requiredDuringSchedulingIgnoredDuringExecution:
-      #      nodeSelectorTerms:
-      #        - matchExpressions:
-      #          key: test
-      #          operator: Equal
-      #          value: perf-tests
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                key: test
+                operator: Equal
+                value: perf-tests
       tolerations:
         - key: node
           effect: NoSchedule
-          operator: "Exist"
+          operator: "Equal"
           value: {{.Taint}}
       containers:
         - name: pause

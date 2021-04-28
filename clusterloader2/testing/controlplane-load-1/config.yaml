@@ -22,7 +22,7 @@ tuningSets:
       stepDelay: 15s
 
 steps:
-  - name: Creating RBAC
+  - name: Create RBAC
     phases:
       - namespaceRange:
           min: 1
@@ -31,13 +31,15 @@ steps:
         tuningSet: SequenceStepped
         objectBundle:
           - basename: watcher
+            objectTemplatePath: serviceaccount.yaml
+          - basename: watcher
             objectTemplatePath: role.yaml
           - basename: watcher
             objectTemplatePath: rolebinding.yaml
             templateFillMap:
-              ServiceAccount: watcher
+              ServiceAccount: watcher-0
 
-  - name: Starting measurements
+  - name: Start measurements
     # TODO: also gather these values
     measurements:
     - Identifier: APIResponsivenessPrometheus
@@ -119,14 +121,7 @@ steps:
       Params:
         action: gather
 
-  - name: Wait for watcher pods
-    measurements:
-      - Identifier: Wait
-        Method: Sleep
-        Params:
-          duration: 5m
-
-  - name: Creating pods
+  - name: Creating pods to simulate deployments
     phases:
 {{range $i := Loop $nodegroups}}
     - namespaceRange:
@@ -148,6 +143,11 @@ steps:
       Method: WaitForControlledPodsRunning
       Params:
         action: gather
+    - Identifier: Wait # wait for pod launches to settle for a few minutes
+      Method: Sleep
+      Params:
+        duration: 20s
+
 
   - name: Scale-up pods L134
     phases:
@@ -171,17 +171,10 @@ steps:
       Method: WaitForControlledPodsRunning
       Params:
         action: gather
-
-  - name: Waiting for nodes to be running L154
-    measurements:
-    - Identifier: WaitForNodes
-      Method: WaitForNodes
+    - Identifier: Wait # wait for pod launches to settle for a few minutes
+      Method: Sleep
       Params:
-        maxDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
-        minDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
-        action: gather
-        labelSelector: test = perf-tests
-        timeout: 60m
+        duration: 30s
 
   - name: Scale-down pods L165
     phases:
