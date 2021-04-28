@@ -23,7 +23,7 @@ spec:
       minSize: 1
       maxSize: 30
     launchConfiguration:
-      instanceType: t2.small
+      instanceType: t2.large
   kubelet:
     taints:
       node: "{{ .Name }}:NoSchedule"

@@ -34,5 +34,5 @@ spec:
           image: gcr.io/google-containers/pause:3.2
           resources:
             requests:
-              cpu: 1000m # 1mCpu per Token * per QPS
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
