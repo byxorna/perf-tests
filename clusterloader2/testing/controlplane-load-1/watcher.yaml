@@ -17,6 +17,7 @@ spec:
         test: perf-tests
         name: {{.Name}}
     spec:
+      serviceAccountName: "watcher"
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

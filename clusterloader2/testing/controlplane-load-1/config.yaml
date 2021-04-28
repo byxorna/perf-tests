@@ -22,243 +22,258 @@ tuningSets:
       stepDelay: 15s
 
 steps:
-- name: Starting measurements
-  # TODO: also gather these values
-  measurements:
-  - Identifier: APIResponsivenessPrometheus
-    Method: APIResponsivenessPrometheus
-    Params:
-      action: start
-  - Identifier: APIResponsivenessPrometheusSimple
-    Method: APIResponsivenessPrometheus
-    Params:
-      action: start
-  - Identifier: InClusterNetworkLatency
-    Method: InClusterNetworkLatency
-    Params:
-      action: start
-      replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
-  - Identifier: DnsLookupLatency
-    Method: DnsLookupLatency
-    Params:
-      action: start
-      replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
+  - name: Creating RBAC
+    phases:
+      - namespaceRange:
+          min: 1
+          max: {{$namespaces}}
+        replicasPerNamespace: 1
+        tuningSet: SequenceStepped
+        objectBundle:
+          - basename: watcher
+            objectTemplatePath: role.yaml
+          - basename: watcher
+            objectTemplatePath: rolebinding.yaml
+            templateFillMap:
+              ServiceAccount: watcher
 
-- name: Creating Nodegroups
-  phases:
+  - name: Starting measurements
+    # TODO: also gather these values
+    measurements:
+    - Identifier: APIResponsivenessPrometheus
+      Method: APIResponsivenessPrometheus
+      Params:
+        action: start
+    - Identifier: APIResponsivenessPrometheusSimple
+      Method: APIResponsivenessPrometheus
+      Params:
+        action: start
+    - Identifier: InClusterNetworkLatency
+      Method: InClusterNetworkLatency
+      Params:
+        action: start
+        replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
+    - Identifier: DnsLookupLatency
+      Method: DnsLookupLatency
+      Params:
+        action: start
+        replicasPerProbe: {{AddInt 2 (DivideInt .Nodes 100)}}
+
+  - name: Creating Nodegroups
+    phases:
 {{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 1
-    tuningSet: SequenceStepped
-    objectBundle:
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 1
+      tuningSet: SequenceStepped
+      objectBundle:
+        - basename: ng-{{$i}}
+          objectTemplatePath: nodegroup.yaml
+{{ end }}
+
+  - name: Waiting for initial nodes to be running
+    measurements:
+    - Identifier: WaitForNodes
+      Method: WaitForNodes
+      Params:
+        maxDesiredNodeCount: 2500
+        # minDesiredNodeCount:  {{ MultiplyInt 3 (MultiplyInt $nodegroups $namespaces)}}
+        minDesiredNodeCount:  {{ MultiplyInt $nodegroups $namespaces}} # Third of the nodes because it takes too long when lot of ng are created
+        action: gather
+        labelSelector: test = perf-tests
+        timeout: 10m
+
+  - name: Measure pod launch time
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: start
+        apiVersion: apps/v1
+        kind: Deployment
+        checkIfPodsAreUpdated: false
+        labelSelector: test = perf-tests
+        operationTimeout: 20m
+
+  - name: Launch watcher pods
+    phases:
+{{range $i := Loop $nodegroups}}
+      - namespaceRange:
+          min: 1
+          max: {{$namespaces}}
+        replicasPerNamespace: 1
+        tuningSet: Sequence
+        objectBundle:
+          - basename: watcher
+            objectTemplatePath: watcher.yaml
+            templateFillMap:
+              Replicas: {{$numWatcherReplicas}}
+              Taint: ng-{{$i}}
+{{end}}
+
+  - name: Waiting for watcher pods
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: gather
+
+  - name: Wait for watcher pods
+    measurements:
+      - Identifier: Wait
+        Method: Sleep
+        Params:
+          duration: 5m
+
+  - name: Creating pods
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 1
+      tuningSet: Sequence
+      objectBundle:
+      - basename: pause
+        objectTemplatePath: deployment.yaml
+        templateFillMap:
+          Replicas: {{$replicas}}
+          Taint: ng-{{$i}}
+{{end}}
+
+  - name: Waiting for pods to be running L126
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: gather
+
+  - name: Scale-up pods L134
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 1
+      tuningSet: Sequence
+      objectBundle:
+      - basename: pause
+        objectTemplatePath: deployment.yaml
+        templateFillMap:
+          Replicas: {{MultiplyInt $maxScaleFactor $replicas}}
+          Taint: ng-{{$i}}
+{{end}}
+
+  - name: Waiting for pods to be running L147
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: gather
+
+  - name: Waiting for nodes to be running L154
+    measurements:
+    - Identifier: WaitForNodes
+      Method: WaitForNodes
+      Params:
+        maxDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
+        minDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
+        action: gather
+        labelSelector: test = perf-tests
+        timeout: 60m
+
+  - name: Scale-down pods L165
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 1
+      tuningSet: Sequence
+      objectBundle:
+      - basename: pause
+        objectTemplatePath: deployment.yaml
+        templateFillMap:
+          Replicas: {{$replicas}}
+          Taint: ng-{{$i}}
+{{end}}
+
+  - name: Waiting for pods to be running
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: gather
+
+
+  - name: Wait 5min
+    measurements:
+      - Identifier: Wait
+        Method: Sleep
+        Params:
+          duration: 5m
+
+  - name: Deleting pause pods
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 0
+      tuningSet: Sequence
+      objectBundle:
+      - basename: perf-tests
+        objectTemplatePath: deployment.yaml
+        templateFillMap:
+          Replicas: {{$replicas}}
+          Taint: ng-{{$i}}
+{{ end }}
+
+  - name: Deleting watcher pods
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 0
+      tuningSet: Sequence
+      objectBundle:
+      - basename: watcher
+        objectTemplatePath: watcher.yaml
+        templateFillMap:
+          Replicas: {{$replicas}}
+          Taint: ng-{{$i}}
+{{ end }}
+
+  - name: Waiting for pods to be deleted
+    measurements:
+    - Identifier: WaitForRunningPods
+      Method: WaitForControlledPodsRunning
+      Params:
+        action: gather
+
+
+  - name: Deleting nodegroups
+    phases:
+{{range $i := Loop $nodegroups}}
+    - namespaceRange:
+        min: 1
+        max: {{$namespaces}}
+      replicasPerNamespace: 0
+      tuningSet: SequenceStepped
+      objectBundle:
       - basename: ng-{{$i}}
         objectTemplatePath: nodegroup.yaml
 {{ end }}
 
-- name: Waiting for initial nodes to be running
-  measurements:
-  - Identifier: WaitForNodes
-    Method: WaitForNodes
-    Params:
-      maxDesiredNodeCount: 2500
-      # minDesiredNodeCount:  {{ MultiplyInt 3 (MultiplyInt $nodegroups $namespaces)}}
-      minDesiredNodeCount:  {{ MultiplyInt $nodegroups $namespaces}} # Third of the nodes because it takes too long when lot of ng are created
-      action: gather
-      labelSelector: test = perf-tests
-      timeout: 10m
-
-- name: Measure pod launch time
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: start
-      apiVersion: apps/v1
-      kind: Deployment
-      checkIfPodsAreUpdated: false
-      labelSelector: test = perf-tests
-      operationTimeout: 20m
-
-- name: Launch watcher pods
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 1
-    tuningSet: Sequence
-    objectBundle:
-    - basename: watcher
-      objectTemplatePath: watcher.yaml
-      templateFillMap:
-        Replicas: {{$numWatcherReplicas}}
-        Taint: ng-{{$i}}
-{{end}}
-
-- name: Waiting for watcher pods
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: gather
-
-- name: Wait for watcher pods
-  measurements:
-    - Identifier: Wait
-      Method: Sleep
+  - name: Waiting for nodes to be gone
+    measurements:
+    - Identifier: WaitForNodes
+      Method: WaitForNodes
       Params:
-        duration: 5m
-
-- name: Creating pods
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 1
-    tuningSet: Sequence
-    objectBundle:
-    - basename: pause
-      objectTemplatePath: deployment.yaml
-      templateFillMap:
-        Replicas: {{$replicas}}
-        Taint: ng-{{$i}}
-{{end}}
-
-- name: Waiting for pods to be running L126
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: gather
-
-- name: Scale-up pods L134
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 1
-    tuningSet: Sequence
-    objectBundle:
-    - basename: pause
-      objectTemplatePath: deployment.yaml
-      templateFillMap:
-        Replicas: {{MultiplyInt $maxScaleFactor $replicas}}
-        Taint: ng-{{$i}}
-{{end}}
-
-- name: Waiting for pods to be running L147
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: gather
-
-- name: Waiting for nodes to be running L154
-  measurements:
-  - Identifier: WaitForNodes
-    Method: WaitForNodes
-    Params:
-      maxDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
-      minDesiredNodeCount: {{ MultiplyInt $maxScaleFactor $namespaces}}
-      action: gather
-      labelSelector: test = perf-tests
-      timeout: 60m
-
-- name: Scale-down pods L165
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 1
-    tuningSet: Sequence
-    objectBundle:
-    - basename: pause
-      objectTemplatePath: deployment.yaml
-      templateFillMap:
-        Replicas: {{$replicas}}
-        Taint: ng-{{$i}}
-{{end}}
-
-- name: Waiting for pods to be running
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: gather
-
-
-- name: Wait 5min
-  measurements:
-    - Identifier: Wait
-      Method: Sleep
-      Params:
-        duration: 5m
-
-- name: Deleting pause pods
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 0
-    tuningSet: Sequence
-    objectBundle:
-    - basename: perf-tests
-      objectTemplatePath: deployment.yaml
-      templateFillMap:
-        Replicas: {{$replicas}}
-        Taint: ng-{{$i}}
-{{ end }}
-
-- name: Deleting watcher pods
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 0
-    tuningSet: Sequence
-    objectBundle:
-    - basename: watcher
-      objectTemplatePath: watcher.yaml
-      templateFillMap:
-        Replicas: {{$replicas}}
-        Taint: ng-{{$i}}
-{{ end }}
-
-- name: Waiting for pods to be deleted
-  measurements:
-  - Identifier: WaitForRunningPods
-    Method: WaitForControlledPodsRunning
-    Params:
-      action: gather
-
-
-- name: Deleting nodegroups
-  phases:
-{{range $i := Loop $nodegroups}}
-  - namespaceRange:
-      min: 1
-      max: {{$namespaces}}
-    replicasPerNamespace: 0
-    tuningSet: SequenceStepped
-    objectBundle:
-    - basename: ng-{{$i}}
-      objectTemplatePath: nodegroup.yaml
-{{ end }}
-
-- name: Waiting for nodes to be gone
-  measurements:
-  - Identifier: WaitForNodes
-    Method: WaitForNodes
-    Params:
-      maxDesiredNodeCount: 0
-      minDesiredNodeCount: 0
-      action: gather
-      labelSelector: test = perf-tests
-      timeout: 60m
+        maxDesiredNodeCount: 0
+        minDesiredNodeCount: 0
+        action: gather
+        labelSelector: test = perf-tests
+        timeout: 60m
